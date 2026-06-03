@@ -1,0 +1,30 @@
+<!DOCTYPE html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>RC Car</title><style>
+body{margin:0;font-family:sans-serif;background:#111;color:#eee;text-align:center;touch-action:none}
+#s{padding:8px;font-size:15px}
+#pad{width:80vw;height:80vw;max-width:320px;max-height:320px;margin:8px auto;border-radius:50%;background:#222;border:2px solid #444;position:relative;touch-action:none}
+#k{position:absolute;width:34%;height:34%;left:33%;top:33%;border-radius:50%;background:#4cc2ff}
+#stop{width:80vw;max-width:320px;padding:14px;font-size:18px;border:0;border-radius:10px;background:#e33;color:#fff}
+</style></head><body>
+<div id="s">v4 connecting</div>
+<div id="pad"><div id="k"></div></div>
+<button id="stop">STOP</button>
+<script>
+var BASE=location.protocol.indexOf("http")===0?"":"http://192.168.4.1";
+var S=document.getElementById("s"),P=document.getElementById("pad"),K=document.getElementById("k");
+var sx=0,sy=0,drag=false,busy=false,n=0;
+function st(t){S.textContent="v4 "+t;}
+st("js-ran");
+function go(p){if(busy)return;busy=true;var x=new XMLHttpRequest();x.onreadystatechange=function(){if(x.readyState==4){busy=false;st(x.status==200?"connected":"no signal");}};x.onerror=function(){busy=false;st("no signal");};x.open("GET",BASE+p,true);x.send();}
+function stop(){var x=new XMLHttpRequest();x.open("GET",BASE+"/s",true);x.send();}
+setInterval(function(){if(sx||sy)go("/c?s="+sx.toFixed(2)+"&t="+sy.toFixed(2));else if(n++%12==0)go("/c?s=0&t=0");},80);
+function set(nx,ny){var m=Math.sqrt(nx*nx+ny*ny);if(m>1){nx/=m;ny/=m;}if(Math.abs(nx)<.08)nx=0;if(Math.abs(ny)<.08)ny=0;sx=nx;sy=ny;K.style.transform="translate("+(nx*100)+"%,"+(-ny*100)+"%)";}
+function loc(x,y){var r=P.getBoundingClientRect();set((x-r.left-r.width/2)/(r.width/2),-(y-r.top-r.height/2)/(r.height/2));}
+function rel(){drag=false;sx=0;sy=0;K.style.transform="translate(0,0)";stop();}
+P.addEventListener("touchstart",function(e){e.preventDefault();drag=true;loc(e.touches[0].clientX,e.touches[0].clientY);},{passive:false});
+P.addEventListener("touchmove",function(e){e.preventDefault();if(drag)loc(e.touches[0].clientX,e.touches[0].clientY);},{passive:false});
+P.addEventListener("touchend",function(e){e.preventDefault();rel();},{passive:false});
+document.getElementById("stop").addEventListener("click",rel);
+stop();
+</script></body></html>
