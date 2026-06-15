@@ -56,49 +56,43 @@ If you never read telemetry on the ESP32 you can skip this wire entirely.)
 
 ## 2. Arduino ⇄ Motor driver
 
-Default pin map (used by `arduino_motors.ino`). Works for **TB6612FNG** and
-**L293D / L298N (enable-pin style)**:
+Pin map (used by `arduino_motors.ino`) for a single **BTS7960 (IBT-2)** H-bridge
+driving the car's one drive motor:
 
-| Function | Arduino pin | Driver pin (TB6612) | Driver pin (L293D/L298N) |
-|----------|-------------|---------------------|--------------------------|
-| Right motor speed (PWM) | 5  | PWMA | ENA / EN1 |
-| Right motor dir 1 | 7  | AIN1 | IN1 |
-| Right motor dir 2 | 8  | AIN2 | IN2 |
-| Left motor speed (PWM)  | 6  | PWMB | ENB / EN2 |
-| Left motor dir 1  | 4  | BIN1 | IN3 |
-| Left motor dir 2  | 2  | BIN2 | IN4 |
-| Standby/enable | 12 | STBY | (tie ENA/ENB high, or ignore) |
+| Function | Arduino pin | BTS7960 pin |
+|----------|-------------|-------------|
+| Forward PWM | 3 | RPWM |
+| Reverse PWM | 9 | LPWM |
+| Enable forward half-bridge | 5 | R_EN |
+| Enable reverse half-bridge | 6 | L_EN |
+
+How it drives: `R_EN` and `L_EN` are held **HIGH** to enable the bridge. Direction
+and speed come from the two PWM inputs — to go forward, PWM `RPWM` and hold `LPWM`
+at 0; to reverse, PWM `LPWM` and hold `RPWM` at 0. A duty of 0 on both inputs stops
+the motor.
+
+> **Never PWM both `RPWM` and `LPWM` at once** — that shoot-throughs the bridge. The
+> sketch always zeroes the inactive input first.
 
 > **PWM pins:** On the Arduino Uno/Nano, only pins **3, 5, 6, 9, 10, 11** can do PWM
-> (`analogWrite`). The speed pins above (5, 6) are valid PWM pins.
+> (`analogWrite`). `RPWM=3` and `LPWM=9` are both valid PWM pins. `R_EN`/`L_EN` are
+> plain digital outputs (held HIGH), so any pins work for them.
 
-### If you use a DRV8833
-The DRV8833 has **no enable/PWM pin** — speed is PWM'd directly on the input pins,
-so all four input pins must be PWM-capable. In `arduino_motors.ino` set
-`#define MOTOR_DRIVER DRV8833` and use these pins:
-
-| Function | Arduino pin | DRV8833 pin |
-|----------|-------------|-------------|
-| Right motor in 1 | 5  | AIN1 |
-| Right motor in 2 | 6  | AIN2 |
-| Left motor in 1  | 9  | BIN1 |
-| Left motor in 2  | 10 | BIN2 |
-
-(The code reads these from the same `R_IN1/R_IN2/L_IN1/L_IN2` defines — just change the
-pin numbers near the top of the sketch to the PWM-capable ones shown here.)
+> **BTS7960 power:** It tolerates 5.5–27 V on B+/B− (motor supply) and handles high
+> current — connect the motor battery to B+/B− and the motor to M+/M−. `VCC` is the
+> logic supply (tie to Arduino **5V**), and the driver GND must be common with the
+> Arduino GND and battery −.
 
 ---
 
-## 3. Motor driver ⇄ motors + battery
+## 3. Motor driver ⇄ motor + battery
 
-- **Motor power**: connect your motor battery (e.g. 6V–12V pack) to the driver's
-  motor-supply input (VM / VCC / +12V) and GND. **Do NOT power motors from the
-  Arduino's 5V pin** — motors draw too much current and will brown out the logic.
-- **Logic power**: the driver's logic pin (VCC / +5V / VIO) goes to Arduino 5V
-  (TB6612 VCC = logic 2.7–5.5V; tie its VM to motor battery).
-- **Motors**: left motor to the A (or B) output pair, right motor to the other pair.
-  If a wheel spins the wrong way, swap that motor's two wires (or flip
-  `INVERT_LEFT`/`INVERT_RIGHT` in the sketch).
+- **Motor power**: connect your motor battery (5.5–27 V) to the BTS7960's **B+/B−**
+  terminals. **Do NOT power the motor from the Arduino's 5V pin** — it draws too much
+  current and will brown out the logic.
+- **Logic power**: the driver's **VCC** (logic) goes to Arduino 5V.
+- **Motor**: connect the motor to the **M+/M−** output terminals. If it spins the
+  wrong way, swap the two motor leads (or flip `INVERT_MOTOR` in the sketch).
 - **Common ground**: driver GND ↔ Arduino GND ↔ battery −.
 
 ---
@@ -107,6 +101,6 @@ pin numbers near the top of the sketch to the PWM-capable ones shown here.)
 
 - [ ] All grounds tied together (ESP32, Arduino, driver, battery).
 - [ ] Arduino TX (pin 11) → ESP32 RX (GPIO16) goes through a divider / level shifter.
-- [ ] Motors powered from the battery, **not** from the Arduino.
-- [ ] Driver standby/enable handled (STBY to pin 12, or EN pins high).
-- [ ] First test with wheels **off the ground**.
+- [ ] Motor powered from the battery (B+/B−), **not** from the Arduino.
+- [ ] `R_EN` (pin 5) and `L_EN` (pin 6) wired so the sketch can drive them HIGH.
+- [ ] First test with the wheel **off the ground**.

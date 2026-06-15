@@ -24,9 +24,9 @@ Drive an RC car from your phone's web browser. No app, no internet required.
    │  • Failsafe stop if signal lost           │
    └───────────────┬───────────────────────────┘
                    ▼
-        Motor driver (TB6612 / L293D / DRV8833)
+        Motor driver (BTS7960 / IBT-2 H-bridge)
                    ▼
-            2 DC motors (left + right, tank steering)
+            1 DC drive motor
 ```
 
 The phone connects to the ESP32's hotspot, so this works **anywhere** (no router needed)
@@ -47,7 +47,7 @@ and on **any phone including iPhone**, because the UI is just a web page.
 1. **Wire it up** — follow [`docs/WIRING.md`](docs/WIRING.md). Pay attention to the
    level-shifting warning on the Arduino→ESP32 line (5V can damage the ESP32).
 2. **Flash the Arduino** — open `arduino/arduino_motors/arduino_motors.ino`,
-   set `MOTOR_DRIVER` to the chip you have, upload.
+   confirm the BTS7960 pin map (RPWM=3, LPWM=9, R_EN=5, L_EN=6), upload.
 3. **Flash the ESP32** — open `esp32/esp32_car/esp32_car.ino`, select your ESP32 board,
    upload. No external libraries needed (uses the built-in `WiFi.h` + `WebServer.h`).
 4. **Drive** — on your phone, join the WiFi network **`RC-CAR`** (password `drive1234`),
@@ -65,6 +65,6 @@ and on **any phone including iPhone**, because the UI is just a web page.
 
 - WiFi name/password: top of `esp32_car.ino` (`AP_SSID`, `AP_PASS`).
 - Max speed / deadzone: `esp32_car.ino` (`MAX_PWM`, deadzone in the web UI).
-- Motor direction: if a wheel spins backwards, swap that motor's two wires, or flip
-  the sign in `arduino_motors.ino` (`INVERT_LEFT` / `INVERT_RIGHT`).
-- Motor driver type: `MOTOR_DRIVER` define in `arduino_motors.ino`.
+- Motor direction: if the wheel spins backwards, swap the motor's two leads, or flip
+  `INVERT_MOTOR` in `arduino_motors.ino`.
+- Motor driver: BTS7960 (IBT-2); pin map at the top of `arduino_motors.ino`.
