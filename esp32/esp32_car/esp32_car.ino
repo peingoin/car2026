@@ -73,37 +73,56 @@ void ledWrite(bool on) {
 void ledPulse() { ledWrite(true); gLedOffMs = millis() + LED_PULSE_MS; }
 
 // ---- Minimal control page (small so it never truncates) --------------------
-const char INDEX_HTML[] PROGMEM = R"HTMLDOC(<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"><title>RC Car</title><style>
-*{box-sizing:border-box}html,body{margin:0;height:100%}
-body{font-family:sans-serif;background:#111;color:#eee;touch-action:none;display:flex;flex-direction:column}
-#s{padding:6px;font-size:14px;text-align:center;flex-shrink:0}
-#main{flex:1;display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:10px;padding:6px;overflow:hidden}
-#cv{aspect-ratio:4/3;height:min(44vh,300px);background:#000;border-radius:10px;border:2px solid #333;overflow:hidden;flex-shrink:0}
-#cv img{width:100%;height:100%;object-fit:cover;display:block}
-#pad{width:min(44vh,260px);height:min(44vh,260px);border-radius:50%;background:#222;border:2px solid #444;position:relative;touch-action:none;flex-shrink:0}
-#k{position:absolute;width:34%;height:34%;left:33%;top:33%;border-radius:50%;background:#4cc2ff}
-#bot{padding:8px;flex-shrink:0;display:flex;justify-content:center}
-#stop{padding:12px 40px;font-size:18px;border:0;border-radius:10px;background:#e33;color:#fff}
+const char INDEX_HTML[] PROGMEM = R"HTMLDOC(<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover"><title>RC Car</title><style>
+*{box-sizing:border-box;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent}html,body{margin:0;height:100%;overflow:hidden}
+body{font-family:sans-serif;background:#000;color:#eee;touch-action:none}
+#cam{position:fixed;inset:0;width:100%;height:100%;object-fit:cover;background:#000}
+#s{position:fixed;top:6px;left:50%;transform:translateX(-50%);font-size:13px;padding:3px 10px;border-radius:999px;background:rgba(0,0,0,.45);z-index:3}
+#stop{position:fixed;top:6px;right:8px;z-index:3;padding:8px 18px;font-size:15px;font-weight:700;border:0;border-radius:10px;background:#e33;color:#fff}
+.pad{position:fixed;bottom:max(18px,env(safe-area-inset-bottom));width:min(34vmin,150px);height:min(34vmin,150px);border-radius:18px;background:rgba(20,24,34,.4);border:2px solid rgba(255,255,255,.25);touch-action:none;z-index:2}
+#padL{left:18px}#padR{right:18px}
+.k{position:absolute;width:42%;height:42%;left:29%;top:29%;border-radius:50%;background:rgba(76,194,255,.9);box-shadow:0 4px 12px rgba(0,0,0,.5)}
+.lbl{position:absolute;bottom:4px;left:0;right:0;text-align:center;font-size:11px;color:rgba(255,255,255,.75)}
 </style></head><body>
-<div id="s">v5 connecting</div>
-<div id="main"><div id="cv"><img id="cam" alt=""></div><div id="pad"><div id="k"></div></div></div>
-<div id="bot"><button id="stop">STOP</button></div>
+<img id="cam" alt="">
+<div id="s">v6 connecting</div>
+<button id="stop">STOP</button>
+<div class="pad" id="padL"><div class="k" id="kL"></div><div class="lbl">STEER</div></div>
+<div class="pad" id="padR"><div class="k" id="kR"></div><div class="lbl">SPEED</div></div>
 <script>
-var S=document.getElementById("s"),P=document.getElementById("pad"),K=document.getElementById("k"),C=document.getElementById("cam");
-var sx=0,sy=0,drag=false,busy=false,n=0,cb=false;
-function st(t){S.textContent="v5 "+t;}
+var S=document.getElementById("s"),C=document.getElementById("cam");
+var PL=document.getElementById("padL"),KL=document.getElementById("kL");
+var PR=document.getElementById("padR"),KR=document.getElementById("kR");
+var sx=0,sy=0,busy=false,n=0,cb=false;
+function st(t){S.textContent="v6 "+t;}
 st("js-ran");
 function go(p){if(busy)return;busy=true;var x=new XMLHttpRequest();x.onreadystatechange=function(){if(x.readyState==4){busy=false;st(x.status==200?"connected":"no signal");}};x.onerror=function(){busy=false;st("no signal");};x.open("GET",p,true);x.send();}
 function snd(){var x=new XMLHttpRequest();x.open("GET","/s",true);x.send();}
 setInterval(function(){if(sx||sy)go("/c?s="+sx.toFixed(2)+"&t="+sy.toFixed(2));else if(n++%12==0)go("/c?s=0&t=0");},80);
 setInterval(function(){if(cb)return;cb=true;var t=new Image();t.onload=function(){C.src=t.src;cb=false;};t.onerror=function(){cb=false;};t.src="/cam?t="+Date.now();},150);
-function set(nx,ny){var m=Math.sqrt(nx*nx+ny*ny);if(m>1){nx/=m;ny/=m;}if(Math.abs(nx)<.08)nx=0;if(Math.abs(ny)<.08)ny=0;sx=nx;sy=ny;K.style.transform="translate("+(nx*100)+"%,"+(-ny*100)+"%)";}
-function loc(x,y){var r=P.getBoundingClientRect();set((x-r.left-r.width/2)/(r.width/2),-(y-r.top-r.height/2)/(r.height/2));}
-function rel(){drag=false;sx=0;sy=0;K.style.transform="translate(0,0)";snd();}
-P.addEventListener("touchstart",function(e){e.preventDefault();drag=true;loc(e.touches[0].clientX,e.touches[0].clientY);},{passive:false});
-P.addEventListener("touchmove",function(e){e.preventDefault();if(drag)loc(e.touches[0].clientX,e.touches[0].clientY);},{passive:false});
-P.addEventListener("touchend",function(e){e.preventDefault();rel();},{passive:false});
-document.getElementById("stop").addEventListener("click",rel);
+function dz(v){return Math.abs(v)<.08?0:Math.max(-1,Math.min(1,v));}
+function setL(nx){sx=dz(nx);KL.style.transform="translate("+(sx*60)+"%,0)";}
+function setR(ny){sy=dz(ny);KR.style.transform="translate(0,"+(-sy*60)+"%)";}
+function relL(){sx=0;KL.style.transform="translate(0,0)";}
+function relR(){sy=0;KR.style.transform="translate(0,0)";}
+// Each pad tracks its own finger by touch identifier so two thumbs don't collide.
+function bind(pad,axis,move,rel){
+  var id=null;
+  function pos(t){var r=pad.getBoundingClientRect();return axis=="x"?(t.clientX-r.left-r.width/2)/(r.width/2):-(t.clientY-r.top-r.height/2)/(r.height/2);}
+  function find(list){for(var i=0;i<list.length;i++)if(list[i].identifier===id)return list[i];return null;}
+  pad.addEventListener("touchstart",function(e){e.preventDefault();if(id===null){var t=e.changedTouches[0];id=t.identifier;move(pos(t));}},{passive:false});
+  pad.addEventListener("touchmove",function(e){e.preventDefault();var t=find(e.changedTouches);if(t)move(pos(t));},{passive:false});
+  function end(e){e.preventDefault();if(find(e.changedTouches)){id=null;rel();}}
+  pad.addEventListener("touchend",end,{passive:false});
+  pad.addEventListener("touchcancel",end,{passive:false});
+  var md=false;
+  pad.addEventListener("mousedown",function(e){md=true;move(pos(e));});
+  window.addEventListener("mousemove",function(e){if(md)move(pos(e));});
+  window.addEventListener("mouseup",function(){if(md){md=false;rel();}});
+}
+bind(PL,"x",setL,relL);
+bind(PR,"y",setR,relR);
+document.getElementById("stop").addEventListener("click",function(){relL();relR();snd();});
 snd();
 </script></body></html>)HTMLDOC";
 
