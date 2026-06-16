@@ -25,6 +25,12 @@ const int   ARDUINO_TX_PIN = 4;         // GPIO4 -> Arduino RX (pin 11); inverte
 const bool  SERIAL_INVERT  = true;      // keep the GPIO4 flash LED dark
 const long  ARDUINO_BAUD   = 38400;
 
+// Activity LED: the bright white flash LED (GPIO4) is busy as the Serial2 TX line,
+// so we blink the ESP32-CAM's small onboard RED LED (GPIO33, active LOW) instead.
+const int   STATUS_LED_PIN = 33;
+const bool  STATUS_LED_ACTIVE_LOW = true;
+const unsigned long LED_PULSE_MS  = 60;   // how long each input lights the LED
+
 // ---- Globals ---------------------------------------------------------------
 WebServer server(80);
 DNSServer dnsServer;
@@ -33,6 +39,17 @@ const byte DNS_PORT = 53;
 float gSteer = 0, gThrottle = 0;
 unsigned long gLastCmdMs = 0;
 bool  gStopped = true;
+
+unsigned long gLedOffMs = 0;            // when to switch the activity LED back off
+bool  gLedOn = false;
+
+// ---- Activity LED ----------------------------------------------------------
+void ledWrite(bool on) {
+  digitalWrite(STATUS_LED_PIN, (on == !STATUS_LED_ACTIVE_LOW) ? HIGH : LOW);
+  gLedOn = on;
+}
+// Pulse the LED for LED_PULSE_MS; repeated calls (one per input) keep it flashing.
+void ledPulse() { ledWrite(true); gLedOffMs = millis() + LED_PULSE_MS; }
 
 // ---- Minimal control page (small so it never truncates) --------------------
 const char INDEX_HTML[] PROGMEM = R"HTMLDOC(<!DOCTYPE html><html><head><meta charset="utf-8">
@@ -95,6 +112,7 @@ void handleControl() {
     gLastCmdMs = millis();
     gStopped = false;
     mixAndSend(gSteer, gThrottle);
+    if (fabs(gSteer) > 0.0f || fabs(gThrottle) > 0.0f) ledPulse();  // flash on real input
   }
   server.send(200, "text/plain", "ok");
 }
@@ -116,6 +134,9 @@ void setup() {
   Serial.begin(115200);
   Serial2.begin(ARDUINO_BAUD, SERIAL_8N1, ARDUINO_RX_PIN, ARDUINO_TX_PIN, SERIAL_INVERT);
   delay(200);
+
+  pinMode(STATUS_LED_PIN, OUTPUT);
+  ledWrite(false);                       // start with the activity LED off
 
   WiFi.mode(WIFI_AP);
   bool ok = WiFi.softAP(AP_SSID, (strlen(AP_PASS) >= 8) ? AP_PASS : nullptr);
@@ -147,4 +168,7 @@ void loop() {
     gSteer = gThrottle = 0;
     sendStop();
   }
+
+  // Turn the activity LED back off after its pulse window.
+  if (gLedOn && (long)(millis() - gLedOffMs) >= 0) ledWrite(false);
 }
