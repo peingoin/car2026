@@ -12,6 +12,25 @@
 #include <WiFi.h>
 #include <WebServer.h>
 #include <DNSServer.h>
+#include "esp_camera.h"
+
+// ---- AI-Thinker ESP32-CAM pin map -----------------------------------------
+#define PWDN_GPIO_NUM  32
+#define RESET_GPIO_NUM -1
+#define XCLK_GPIO_NUM   0
+#define SIOD_GPIO_NUM  26
+#define SIOC_GPIO_NUM  27
+#define Y9_GPIO_NUM    35
+#define Y8_GPIO_NUM    34
+#define Y7_GPIO_NUM    39
+#define Y6_GPIO_NUM    36
+#define Y5_GPIO_NUM    21
+#define Y4_GPIO_NUM    19
+#define Y3_GPIO_NUM    18
+#define Y2_GPIO_NUM     5
+#define VSYNC_GPIO_NUM 25
+#define HREF_GPIO_NUM  23
+#define PCLK_GPIO_NUM  22
 
 // ---- Configuration ---------------------------------------------------------
 const char *AP_SSID = "RC-CAR";
@@ -19,6 +38,9 @@ const char *AP_PASS = "";               // "" = open network; or >=8 chars for a
 
 const int   MAX_PWM       = 255;
 const unsigned long CMD_TIMEOUT_MS = 400;
+
+const int SERVO_CENTER_US = 1500;
+const int SERVO_RANGE_US  = 400;   // ±400µs ≈ ±54° of DS3218 travel; tune to taste
 
 const int   ARDUINO_RX_PIN = -1;        // not used (telemetry off)
 const int   ARDUINO_TX_PIN = 4;         // GPIO4 -> Arduino RX (pin 11); inverted
@@ -35,50 +57,51 @@ unsigned long gLastCmdMs = 0;
 bool  gStopped = true;
 
 // ---- Minimal control page (small so it never truncates) --------------------
-const char INDEX_HTML[] PROGMEM = R"HTMLDOC(<!DOCTYPE html><html><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<title>RC Car</title><style>
-body{margin:0;font-family:sans-serif;background:#111;color:#eee;text-align:center;touch-action:none}
-#s{padding:8px;font-size:15px}
-#pad{width:80vw;height:80vw;max-width:320px;max-height:320px;margin:8px auto;border-radius:50%;background:#222;border:2px solid #444;position:relative;touch-action:none}
+const char INDEX_HTML[] PROGMEM = R"HTMLDOC(<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"><title>RC Car</title><style>
+*{box-sizing:border-box}html,body{margin:0;height:100%}
+body{font-family:sans-serif;background:#111;color:#eee;touch-action:none;display:flex;flex-direction:column}
+#s{padding:6px;font-size:14px;text-align:center;flex-shrink:0}
+#main{flex:1;display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:10px;padding:6px;overflow:hidden}
+#cv{aspect-ratio:4/3;height:min(44vh,300px);background:#000;border-radius:10px;border:2px solid #333;overflow:hidden;flex-shrink:0}
+#cv img{width:100%;height:100%;object-fit:cover;display:block}
+#pad{width:min(44vh,260px);height:min(44vh,260px);border-radius:50%;background:#222;border:2px solid #444;position:relative;touch-action:none;flex-shrink:0}
 #k{position:absolute;width:34%;height:34%;left:33%;top:33%;border-radius:50%;background:#4cc2ff}
-#stop{width:80vw;max-width:320px;padding:14px;font-size:18px;border:0;border-radius:10px;background:#e33;color:#fff}
+#bot{padding:8px;flex-shrink:0;display:flex;justify-content:center}
+#stop{padding:12px 40px;font-size:18px;border:0;border-radius:10px;background:#e33;color:#fff}
 </style></head><body>
-<div id="s">v4 connecting</div>
-<div id="pad"><div id="k"></div></div>
-<button id="stop">STOP</button>
+<div id="s">v5 connecting</div>
+<div id="main"><div id="cv"><img id="cam" alt=""></div><div id="pad"><div id="k"></div></div></div>
+<div id="bot"><button id="stop">STOP</button></div>
 <script>
-var S=document.getElementById("s"),P=document.getElementById("pad"),K=document.getElementById("k");
-var sx=0,sy=0,drag=false,busy=false,n=0;
-function st(t){S.textContent="v4 "+t;}
+var S=document.getElementById("s"),P=document.getElementById("pad"),K=document.getElementById("k"),C=document.getElementById("cam");
+var sx=0,sy=0,drag=false,busy=false,n=0,cb=false;
+function st(t){S.textContent="v5 "+t;}
 st("js-ran");
 function go(p){if(busy)return;busy=true;var x=new XMLHttpRequest();x.onreadystatechange=function(){if(x.readyState==4){busy=false;st(x.status==200?"connected":"no signal");}};x.onerror=function(){busy=false;st("no signal");};x.open("GET",p,true);x.send();}
-function stop(){var x=new XMLHttpRequest();x.open("GET","/s",true);x.send();}
+function snd(){var x=new XMLHttpRequest();x.open("GET","/s",true);x.send();}
 setInterval(function(){if(sx||sy)go("/c?s="+sx.toFixed(2)+"&t="+sy.toFixed(2));else if(n++%12==0)go("/c?s=0&t=0");},80);
+setInterval(function(){if(cb)return;cb=true;var t=new Image();t.onload=function(){C.src=t.src;cb=false;};t.onerror=function(){cb=false;};t.src="/cam?t="+Date.now();},150);
 function set(nx,ny){var m=Math.sqrt(nx*nx+ny*ny);if(m>1){nx/=m;ny/=m;}if(Math.abs(nx)<.08)nx=0;if(Math.abs(ny)<.08)ny=0;sx=nx;sy=ny;K.style.transform="translate("+(nx*100)+"%,"+(-ny*100)+"%)";}
 function loc(x,y){var r=P.getBoundingClientRect();set((x-r.left-r.width/2)/(r.width/2),-(y-r.top-r.height/2)/(r.height/2));}
-function rel(){drag=false;sx=0;sy=0;K.style.transform="translate(0,0)";stop();}
+function rel(){drag=false;sx=0;sy=0;K.style.transform="translate(0,0)";snd();}
 P.addEventListener("touchstart",function(e){e.preventDefault();drag=true;loc(e.touches[0].clientX,e.touches[0].clientY);},{passive:false});
 P.addEventListener("touchmove",function(e){e.preventDefault();if(drag)loc(e.touches[0].clientX,e.touches[0].clientY);},{passive:false});
 P.addEventListener("touchend",function(e){e.preventDefault();rel();},{passive:false});
 document.getElementById("stop").addEventListener("click",rel);
-stop();
+snd();
 </script></body></html>)HTMLDOC";
 
-// ---- Motor mixing ----------------------------------------------------------
+// ---- Servo steering + motor drive ------------------------------------------
 void mixAndSend(float steer, float throttle) {
-  float left  = throttle + steer;
-  float right = throttle - steer;
-  float m = max(max(fabs(left), fabs(right)), 1.0f);
-  left  /= m;
-  right /= m;
-  int l = constrain((int)lround(left  * MAX_PWM), -MAX_PWM, MAX_PWM);
-  int r = constrain((int)lround(right * MAX_PWM), -MAX_PWM, MAX_PWM);
-  Serial2.printf("D %d %d\n", l, r);
+  int t  = constrain((int)lround(throttle * MAX_PWM), -MAX_PWM, MAX_PWM);
+  Serial2.printf("D %d %d\n", t, t);   // both motors at equal throttle
+  int us = constrain(SERVO_CENTER_US + (int)lround(steer * SERVO_RANGE_US), 500, 2500);
+  Serial2.printf("V %d\n", us);
 }
 
 void sendStop() {
   Serial2.print("S\n");
+  Serial2.printf("V %d\n", SERVO_CENTER_US);
   gStopped = true;
 }
 
@@ -111,11 +134,47 @@ void handleAppleProbe() {
               "<HTML><HEAD><TITLE>Success</TITLE></HEAD><BODY>Success</BODY></HTML>");
 }
 
+void handleCam() {
+  camera_fb_t *fb = esp_camera_fb_get();
+  if (!fb) { server.send(503, "text/plain", "camera error"); return; }
+  server.sendHeader("Cache-Control", "no-store");
+  server.send(200, "image/jpeg", (const char*)fb->buf, fb->len);
+  esp_camera_fb_return(fb);
+}
+
+void initCamera() {
+  camera_config_t cfg = {};
+  cfg.ledc_channel    = LEDC_CHANNEL_0;
+  cfg.ledc_timer      = LEDC_TIMER_0;
+  cfg.pin_d0          = Y2_GPIO_NUM;  cfg.pin_d1 = Y3_GPIO_NUM;
+  cfg.pin_d2          = Y4_GPIO_NUM;  cfg.pin_d3 = Y5_GPIO_NUM;
+  cfg.pin_d4          = Y6_GPIO_NUM;  cfg.pin_d5 = Y7_GPIO_NUM;
+  cfg.pin_d6          = Y8_GPIO_NUM;  cfg.pin_d7 = Y9_GPIO_NUM;
+  cfg.pin_xclk        = XCLK_GPIO_NUM;
+  cfg.pin_pclk        = PCLK_GPIO_NUM;
+  cfg.pin_vsync       = VSYNC_GPIO_NUM;
+  cfg.pin_href        = HREF_GPIO_NUM;
+  cfg.pin_sscb_sda    = SIOD_GPIO_NUM;
+  cfg.pin_sscb_scl    = SIOC_GPIO_NUM;
+  cfg.pin_pwdn        = PWDN_GPIO_NUM;
+  cfg.pin_reset       = RESET_GPIO_NUM;
+  cfg.xclk_freq_hz    = 20000000;
+  cfg.pixel_format    = PIXFORMAT_JPEG;
+  cfg.frame_size      = FRAMESIZE_QVGA;  // 320x240
+  cfg.jpeg_quality    = 12;
+  cfg.fb_count        = 1;
+  if (psramFound()) { cfg.fb_count = 2; cfg.grab_mode = CAMERA_GRAB_LATEST; }
+  esp_err_t err = esp_camera_init(&cfg);
+  if (err != ESP_OK) Serial.printf("[cam] init failed: 0x%x\n", err);
+  else               Serial.println("[cam] ready");
+}
+
 // ---- Setup / loop ----------------------------------------------------------
 void setup() {
   Serial.begin(115200);
   Serial2.begin(ARDUINO_BAUD, SERIAL_8N1, ARDUINO_RX_PIN, ARDUINO_TX_PIN, SERIAL_INVERT);
   delay(200);
+  initCamera();
 
   WiFi.mode(WIFI_AP);
   bool ok = WiFi.softAP(AP_SSID, (strlen(AP_PASS) >= 8) ? AP_PASS : nullptr);
@@ -128,6 +187,7 @@ void setup() {
   server.on("/", handleRoot);
   server.on("/c", handleControl);
   server.on("/s", handleStop);
+  server.on("/cam", handleCam);
   server.on("/hotspot-detect.html", handleAppleProbe);
   server.on("/generate_204", [](){ server.send(204); });
   server.on("/ncsi.txt", [](){ server.send(200, "text/plain", "Microsoft NCSI"); });

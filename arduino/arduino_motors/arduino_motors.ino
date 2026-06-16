@@ -14,6 +14,7 @@
  * ========================================================================== */
 
 #include <SoftwareSerial.h>
+#include <Servo.h>
 
 // ---- Choose your driver ----------------------------------------------------
 #define TB6612  0
@@ -38,6 +39,13 @@ uint8_t L_IN2 = 4;               // direction 2
 // Standby (TB6612 only). Bare L293D has NO standby pin -> 255 disables this.
 uint8_t STBY_PIN = 255;
 
+// DS3218 270° servo — pulse range 500–2500µs, center 1500µs.
+const uint8_t SERVO_PIN       = 6;
+const int     SERVO_MIN_US    = 500;
+const int     SERVO_MAX_US    = 2500;
+const int     SERVO_CENTER_US = 1500;
+const bool    SERVO_REVERSED  = false;  // set true if wheels turn the wrong way
+
 // NOTE for DRV8833: it has no PWM/standby pins — PWM is applied on the input
 // pins, which must therefore be PWM-capable (Uno: 3,5,6,9,10,11). Change the
 // R_IN*/L_IN* numbers above to, e.g., R_IN1=5,R_IN2=6,L_IN1=9,L_IN2=10.
@@ -51,6 +59,7 @@ const bool TELEMETRY    = false;         // echo applied speeds back to ESP32
 // inverse_logic = true  -> matches the ESP32's inverted TX (keeps the ESP32-CAM
 // GPIO4 flash LED dark). Both ends MUST use the same inversion setting.
 SoftwareSerial espSerial(PIN_ESP_RX, PIN_ESP_TX, true);
+Servo steerServo;
 
 unsigned long lastCmdMs = 0;
 char lineBuf[48];
@@ -93,7 +102,10 @@ void setMotors(int left, int right) {
                    espSerial.print(' ');  espSerial.println(right); }
 }
 
-void stopMotors() { setMotors(0, 0); }
+void stopMotors() {
+  setMotors(0, 0);
+  steerServo.writeMicroseconds(SERVO_CENTER_US);
+}
 
 // ---- Command parsing -------------------------------------------------------
 void handleLine(char *line) {
@@ -111,6 +123,15 @@ void handleLine(char *line) {
       l = constrain(l, -255, 255);
       r = constrain(r, -255, 255);
       setMotors(l, r);
+      lastCmdMs = millis();
+    }
+  }
+  if (line[0] == 'V' || line[0] == 'v') {        // steer (microseconds)
+    int us = 0;
+    if (sscanf(line + 1, "%d", &us) == 1) {
+      us = constrain(us, SERVO_MIN_US, SERVO_MAX_US);
+      if (SERVO_REVERSED) us = SERVO_MIN_US + SERVO_MAX_US - us;
+      steerServo.writeMicroseconds(us);
       lastCmdMs = millis();
     }
   }
@@ -141,6 +162,8 @@ void setup() {
   Serial.begin(115200);            // USB debug
   espSerial.begin(38400);          // link to ESP32 (SoftwareSerial-safe rate)
 
+  steerServo.attach(SERVO_PIN, SERVO_MIN_US, SERVO_MAX_US);
+  steerServo.writeMicroseconds(SERVO_CENTER_US);
   stopMotors();
   lastCmdMs = millis();
   Serial.println(F("[arduino] motor controller ready"));
