@@ -16,6 +16,7 @@
  * ========================================================================== */
 
 #include <SoftwareSerial.h>
+#include <Servo.h>
 
 // ---- Pin map ---------------------------------------------------------------
 // Serial link to ESP32 (SoftwareSerial)
@@ -29,6 +30,14 @@ const uint8_t LPWM = 6;          // reverse PWM  — MUST be a PWM pin
 const uint8_t R_EN = 7;          // enable forward half-bridge (driven HIGH, always on)
 const uint8_t L_EN = 8;          // enable reverse half-bridge (driven HIGH, always on)
 
+// DS3218 270° servo — pulse range 500–2500µs, center 1500µs.
+// Pin 10 used (pin 6 is taken by BTS7960 L_EN).
+const uint8_t SERVO_PIN       = 10;
+const int     SERVO_MIN_US    = 500;
+const int     SERVO_MAX_US    = 2500;
+const int     SERVO_CENTER_US = 1500;
+const bool    SERVO_REVERSED  = false;  // set true if wheels turn the wrong way
+
 // ---- Behavior --------------------------------------------------------------
 const unsigned long FAILSAFE_MS = 400;   // stop if no command for this long
 const bool INVERT_MOTOR = false;         // flip if the wheel runs backwards
@@ -37,6 +46,7 @@ const bool TELEMETRY    = false;         // echo applied speed back to ESP32
 // inverse_logic = true  -> matches the ESP32's inverted TX (keeps the ESP32-CAM
 // GPIO4 flash LED dark). Both ends MUST use the same inversion setting.
 SoftwareSerial espSerial(PIN_ESP_RX, PIN_ESP_TX, true);
+Servo steerServo;
 
 unsigned long lastCmdMs = 0;
 char lineBuf[48];
@@ -67,7 +77,10 @@ void setMotors(int left, int right) {
   if (TELEMETRY) { espSerial.print("T "); espSerial.println(speed); }
 }
 
-void stopMotors() { setMotors(0, 0); }
+void stopMotors() {
+  setMotors(0, 0);
+  steerServo.writeMicroseconds(SERVO_CENTER_US);
+}
 
 // ---- Command parsing -------------------------------------------------------
 void handleLine(char *line) {
@@ -85,6 +98,15 @@ void handleLine(char *line) {
       l = constrain(l, -255, 255);
       r = constrain(r, -255, 255);
       setMotors(l, r);
+      lastCmdMs = millis();
+    }
+  }
+  if (line[0] == 'V' || line[0] == 'v') {        // steer (microseconds)
+    int us = 0;
+    if (sscanf(line + 1, "%d", &us) == 1) {
+      us = constrain(us, SERVO_MIN_US, SERVO_MAX_US);
+      if (SERVO_REVERSED) us = SERVO_MIN_US + SERVO_MAX_US - us;
+      steerServo.writeMicroseconds(us);
       lastCmdMs = millis();
     }
   }
@@ -114,6 +136,8 @@ void setup() {
   Serial.begin(115200);            // USB debug
   espSerial.begin(38400);          // link to ESP32 (SoftwareSerial-safe rate)
 
+  steerServo.attach(SERVO_PIN, SERVO_MIN_US, SERVO_MAX_US);
+  steerServo.writeMicroseconds(SERVO_CENTER_US);
   stopMotors();
   lastCmdMs = millis();
   Serial.println(F("[arduino] motor controller ready (BTS7960)"));
