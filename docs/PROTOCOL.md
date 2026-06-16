@@ -54,14 +54,20 @@ D <left> <right>\n
 - `left`, `right` — integers in `[-255, 255]` (sign = direction, magnitude = PWM duty).
 
 ```
-D 255 255\n     → both motors full forward
-D -255 -255\n   → both full reverse
-D 200 -200\n    → spin in place (left fwd, right rev) → turns right
+D 255 255\n     → full forward
+D -255 -255\n   → full reverse
+D 200 -200\n    → net zero → stops (see single-motor note below)
 D 0 0\n         → stop
 S\n             → stop (alias)
 ```
 
-The Arduino stops the motors if **no valid command arrives for 400 ms** (failsafe).
+> **Single-motor hardware:** the car now has one drive motor on a BTS7960, so the
+> Arduino collapses the pair into a single throttle = `(left + right) / 2` and drives
+> that one motor. The wire protocol is unchanged (the ESP32 still mixes and sends a
+> left/right pair); steering is handled separately. A pure spin command like
+> `D 200 -200` therefore averages to 0.
+
+The Arduino stops the motor if **no valid command arrives for 400 ms** (failsafe).
 
 ### Optional telemetry (Arduino → ESP32)
 The Arduino may send back status lines (ignored by default UI):

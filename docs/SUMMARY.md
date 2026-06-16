@@ -61,7 +61,7 @@ DS3218 servo → front wheels (Ackermann/RC-car steering)
 
 - **Serial**: SoftwareSerial on pin 11 (RX from ESP32) at 38400 baud, **inverted** (matches ESP32).
 - **Driver support**: compile-time `#define MOTOR_DRIVER` selects TB6612, L293D/L298N, or DRV8833. DRV8833 mode PWMs the input pins directly; the other modes use separate direction and PWM-enable pins.
-- **Pin map (default)**: right motor: PWM=10, IN1=7, IN2=9; left motor: PWM=5, IN1=3, IN2=4; servo signal: pin 6.
+- **Pin map**: BTS7960 single motor — RPWM=3, LPWM=9, R_EN=5, L_EN=6; servo signal: pin 10.
 - **Servo**: Miuzei DS3218 270° servo driven via Arduino `Servo` library. `attach(pin, 500, 2500)` sets the full DS3218 pulse range; `writeMicroseconds()` is used for precise positioning. `SERVO_REVERSED` flag inverts direction without rewiring.
 - **Inversion**: `INVERT_LEFT` / `INVERT_RIGHT` booleans flip individual wheel direction without rewiring.
 - **Failsafe**: stops motors and centers servo if no valid command for 400 ms. Resets the timer on each valid `D`, `V`, or `S` command.
@@ -129,7 +129,7 @@ A React 19 + Vite + Tailwind CSS 4 scrollytelling marketing page for the project
 
 - ESP32-CAM GPIO4 (TX, inverted) → Arduino pin 11 (RX). 3.3V drives 5V input fine — no level shifting needed in this direction.
 - Arduino TX (5V) → ESP32 RX requires a voltage divider (1kΩ + 2kΩ) or logic-level converter. Only needed if telemetry is enabled.
-- Arduino pin 6 → DS3218 servo signal wire. The DS3218 accepts standard 50 Hz PWM from a 5V source.
+- Arduino pin 10 → DS3218 servo signal wire (pin 6 is used by BTS7960 L_EN). The DS3218 accepts standard 50 Hz PWM from a 5V source.
 - DS3218 servo power (red) must come from a **dedicated 6–8.4V supply** — the 20 kg stall current exceeds what the Arduino 5V rail can provide.
 - Motors must be powered from the motor battery, not the Arduino 5V pin.
 - All grounds (ESP32, Arduino, motor driver, servo supply, battery −) must be common.
