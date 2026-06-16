@@ -15,17 +15,17 @@ ESP32-CAM  (/esp32/esp32_car/esp32_car.ino)
     • Serves the control page (embedded HTML)
     • Handles /c?s=&t=, /s, and /cam HTTP routes
     • Serves live JPEG snapshots via GET /cam (~6-7 fps)
-    • Throttle (Y) → equal PWM to both motors
+    • Throttle (Y) → equal PWM to single motor
     • Steer (X) → servo pulse width (µs) via "V <us>\n"
     │  UART serial @ 38400 baud
     ▼
 Arduino Uno/Nano  (/arduino/arduino_motors/arduino_motors.ino)
     • Parses "D <left> <right>", "V <us>", and "S" commands
-    • Drives motor driver (TB6612 / L293D / DRV8833)
-    • Drives Miuzei DS3218 270° servo on pin 6 via Servo library
+    • Drives BTS7960 (IBT-2) H-bridge motor driver
+    • Drives DS3218 270° servo on pin 10 via Servo library
     • Failsafe: stops motors + centers servo if no command for 400 ms
     ▼
-Motor driver → 2 DC motors (equal throttle, rear-wheel drive)
+BTS7960 H-bridge → 1 DC drive motor (rear-wheel drive)
 DS3218 servo → front wheels (Ackermann/RC-car steering)
 ```
 
@@ -36,8 +36,10 @@ DS3218 servo → front wheels (Ackermann/RC-car steering)
 | Path | Description |
 |------|-------------|
 | `esp32/esp32_car/esp32_car.ino` | ESP32-CAM firmware: WiFi AP, HTTP web server, serial bridge. No external libraries (uses built-in `WiFi.h`, `WebServer.h`, `DNSServer.h`). |
-| `arduino/arduino_motors/arduino_motors.ino` | Arduino firmware: serial command parser, motor driver abstraction, 400 ms failsafe. Supports TB6612, L293D/L298N, and DRV8833. |
-| `arduino/motor_test/motor_test.ino` | Standalone wiring sanity sketch. Cycles each motor forward/reverse without needing the ESP32 or phone. |
+| `arduino/arduino_motors/arduino_motors.ino` | Arduino firmware: serial command parser, BTS7960 motor driver control, DS3218 servo control, 400 ms failsafe. |
+| `arduino/motor_test/motor_test.ino` | Standalone motor wiring test. Cycles the motor forward/reverse without needing the ESP32 or phone. Tests BTS7960 pins 5 & 6. |
+| `arduino/servo_test/servo_test.ino` | Servo calibration test. Sweeps servo from 500-2500µs in 100µs steps to find optimal range for DS3218 270° servo. |
+| `esp32/servo_precision_test/servo_precision_test.ino` | Precision servo testing web interface. WiFi AP "SERVO-TEST" with web UI for microsecond-precise control, sweep testing, and safe range discovery. Features fine adjustment buttons (±1/5/10/50/100µs), preset positions, automatic sweep mode, and code export. |
 | `web/index.html` | Full-featured standalone control page (also the version embedded in the ESP32 sketch). Features a circular touch joystick, throttle/steer meters, a STOP button, and status indicator. Works in desktop browsers for development preview. |
 | `docs/PROTOCOL.md` | Exact message formats for both links (phone↔ESP32 and ESP32↔Arduino). |
 | `docs/WIRING.md` | Pin-by-pin wiring table, level-shifting note (Arduino 5V TX → ESP32 3.3V RX), motor driver hookup, and a sanity checklist. |
@@ -49,23 +51,24 @@ DS3218 servo → front wheels (Ackermann/RC-car steering)
 
 ## Firmware — ESP32 (`esp32_car.ino`)
 
-- **WiFi**: open access point `RC-CAR` at `192.168.4.1`. Password can be set via `AP_PASS`; must be ≥8 chars or it is ignored (open).
+- **WiFi**: open access point `RC-CAR` at `192.168.4.1` on channel 1. Password can be set via `AP_PASS`; must be ≥8 chars or it is ignored (open). WiFi reliability improvements: max power (19.5dBm), persistent=false to avoid flash wear, explicit channel 1 for stability.
 - **DNS**: wildcard DNS server redirects any domain to the AP IP (captive-portal style so iOS/Android auto-opens the page).
 - **HTTP routes**: `/` (control page), `/c?s=&t=` (control update, returns `ok`), `/s` (stop, returns `stopped`), `/cam` (JPEG snapshot, returns `image/jpeg`), `/hotspot-detect.html` + `/generate_204` + `/ncsi.txt` (Apple/Android captive-portal probes).
 - **Camera**: `initCamera()` configures the OV2640 sensor at QVGA (320×240) JPEG, quality 12. If PSRAM is present, uses 2 frame buffers with `CAMERA_GRAB_LATEST` to always return the freshest frame. `handleCam()` calls `esp_camera_fb_get()`, sends the buffer as `image/jpeg`, then returns it immediately — no blocking of the control loop.
-- **Steering**: joystick X-axis maps directly to servo pulse width: `us = 1500 + steer × 400` (range 1100–1900µs, centre 1500µs). Both DC motors receive equal throttle from the Y-axis.
-- **Serial**: sends `D <t> <t>\n` (equal throttle) and `V <us>\n` (servo µs) to the Arduino over GPIO4 at 38400 baud with **inverted logic** (idles LOW) so the ESP32-CAM's onboard flash LED stays dark. `SERVO_RANGE_US` (default 400) is a tunable constant.
+- **Steering**: joystick X-axis maps directly to servo pulse width: `us = 1500 + steer × 400` (range 1100–1900µs, centre 1500µs). Single DC motor receives throttle from the Y-axis (averaged from left/right).
+- **Serial**: sends `D <t> <t>\n` (equal throttle) and `V <us>\n` (servo µs) to the Arduino over GPIO14 at 38400 baud with **inverted logic** (idles LOW). GPIO14 is used instead of GPIO4 to avoid the onboard flash LED. `SERVO_RANGE_US` (default 400) is a tunable constant.
+- **Activity LED**: GPIO33 (red LED) flashes on each input received for visual feedback.
 - **Failsafe**: if no `/c` or `/s` request arrives for 400 ms, sends `S\n` and stops.
 
 ## Firmware — Arduino (`arduino_motors.ino`)
 
-- **Serial**: SoftwareSerial on pin 11 (RX from ESP32) at 38400 baud, **inverted** (matches ESP32).
-- **Driver support**: compile-time `#define MOTOR_DRIVER` selects TB6612, L293D/L298N, or DRV8833. DRV8833 mode PWMs the input pins directly; the other modes use separate direction and PWM-enable pins.
-- **Pin map**: BTS7960 single motor — RPWM=3, LPWM=9, R_EN=5, L_EN=6; servo signal: pin 10.
-- **Servo**: Miuzei DS3218 270° servo driven via Arduino `Servo` library. `attach(pin, 500, 2500)` sets the full DS3218 pulse range; `writeMicroseconds()` is used for precise positioning. `SERVO_REVERSED` flag inverts direction without rewiring.
-- **Inversion**: `INVERT_LEFT` / `INVERT_RIGHT` booleans flip individual wheel direction without rewiring.
+- **Serial**: SoftwareSerial on pin 11 (RX from ESP32) at 38400 baud, **inverted** (matches ESP32). Pin 12 for optional TX (telemetry).
+- **Motor Driver**: BTS7960 (IBT-2) H-bridge for single motor control. RPWM (forward PWM) on pin 5, LPWM (reverse PWM) on pin 6, R_EN on pin 7, L_EN on pin 8. Enable pins are held HIGH; direction and speed controlled via PWM inputs.
+- **Pin map**: BTS7960 single motor — RPWM=5, LPWM=6, R_EN=7, L_EN=8; servo signal: pin 10.
+- **Servo**: DS3218 270° servo driven via Arduino `Servo` library. `attach(pin, 500, 2500)` sets the full DS3218 pulse range; `writeMicroseconds()` is used for precise positioning. `SERVO_REVERSED` flag inverts direction without rewiring.
+- **Motor control**: Single physical motor driven by averaged left/right commands: `speed = (left + right) / 2`. `INVERT_MOTOR` boolean flips motor direction without rewiring.
 - **Failsafe**: stops motors and centers servo if no valid command for 400 ms. Resets the timer on each valid `D`, `V`, or `S` command.
-- **Telemetry**: optional `T <l> <r>\n` echo back to the ESP32 (disabled by default; requires a level-shifted wire).
+- **Telemetry**: optional `T <speed>\n` echo back to the ESP32 (disabled by default; requires a level-shifted wire).
 
 ## Control page (`web/index.html`)
 
@@ -127,11 +130,12 @@ A React 19 + Vite + Tailwind CSS 4 scrollytelling marketing page for the project
 
 ## Wiring highlights
 
-- ESP32-CAM GPIO4 (TX, inverted) → Arduino pin 11 (RX). 3.3V drives 5V input fine — no level shifting needed in this direction.
-- Arduino TX (5V) → ESP32 RX requires a voltage divider (1kΩ + 2kΩ) or logic-level converter. Only needed if telemetry is enabled.
-- Arduino pin 10 → DS3218 servo signal wire (pin 6 is used by BTS7960 L_EN). The DS3218 accepts standard 50 Hz PWM from a 5V source.
+- ESP32-CAM GPIO14 (TX, inverted) → Arduino pin 11 (RX). 3.3V drives 5V input fine — no level shifting needed in this direction.
+- Arduino pin 12 TX (5V) → ESP32 RX requires a voltage divider (1kΩ + 2kΩ) or logic-level converter. Only needed if telemetry is enabled.
+- Arduino pin 10 → DS3218 servo signal wire. The DS3218 accepts standard 50 Hz PWM from a 5V source.
+- BTS7960 connections: RPWM=pin 5, LPWM=pin 6, R_EN=pin 7, L_EN=pin 8, VCC=Arduino 5V, GND=common ground, B+/B−=motor battery, M+/M−=motor terminals.
 - DS3218 servo power (red) must come from a **dedicated 6–8.4V supply** — the 20 kg stall current exceeds what the Arduino 5V rail can provide.
-- Motors must be powered from the motor battery, not the Arduino 5V pin.
+- Motor must be powered from the motor battery via BTS7960 B+/B−, not the Arduino 5V pin.
 - All grounds (ESP32, Arduino, motor driver, servo supply, battery −) must be common.
 
 ---

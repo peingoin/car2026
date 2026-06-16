@@ -13,7 +13,7 @@
 #include <WebServer.h>
 #include <DNSServer.h>
 #include "esp_camera.h"
-
+ 
 // ---- AI-Thinker ESP32-CAM pin map -----------------------------------------
 #define PWDN_GPIO_NUM  32
 #define RESET_GPIO_NUM -1
@@ -153,12 +153,36 @@ void handleAppleProbe() {
 
 void handleCam() {
   camera_fb_t *fb = esp_camera_fb_get();
-  if (!fb) { server.send(503, "text/plain", "camera error"); return; }
+  if (!fb) {
+    Serial.println("[cam] Failed to get frame buffer");
+    server.send(503, "text/plain", "camera error");
+    return;
+  }
+
+  // Method 1: Using server.send() with String conversion (works for smaller images)
+  // This method converts the binary data to a String, which works but is not optimal for large images
+  /*
   server.sendHeader("Cache-Control", "no-store");
-  server.sendHeader("Content-Type", "image/jpeg");
-  server.sendHeader("Content-Length", String(fb->len));
+  String jpeg((char*)fb->buf, fb->len);
+  server.send(200, "image/jpeg", jpeg);
+  */
+
+  // Method 2: Manual HTTP response with proper status line
   WiFiClient client = server.client();
-  client.write(fb->buf, fb->len);
+  if (client) {
+    // Send HTTP response headers
+    client.println("HTTP/1.1 200 OK");
+    client.println("Content-Type: image/jpeg");
+    client.println("Cache-Control: no-store");
+    client.println("Content-Length: " + String(fb->len));
+    client.println("Connection: close");
+    client.println();  // End of headers
+
+    // Send the image data
+    client.write(fb->buf, fb->len);
+    client.flush();
+  }
+
   esp_camera_fb_return(fb);
 }
 
@@ -183,10 +207,34 @@ void initCamera() {
   cfg.frame_size      = FRAMESIZE_QVGA;  // 320x240
   cfg.jpeg_quality    = 12;
   cfg.fb_count        = 1;
-  if (psramFound()) { cfg.fb_count = 2; cfg.grab_mode = CAMERA_GRAB_LATEST; }
+
+  // PSRAM detection and configuration
+  if (psramFound()) {
+    Serial.println("[cam] PSRAM found, using 2 frame buffers");
+    cfg.fb_count = 2;
+    cfg.grab_mode = CAMERA_GRAB_LATEST;
+    cfg.fb_location = CAMERA_FB_IN_PSRAM;
+  } else {
+    Serial.println("[cam] No PSRAM, using 1 frame buffer in DRAM");
+    cfg.fb_location = CAMERA_FB_IN_DRAM;
+  }
+
   esp_err_t err = esp_camera_init(&cfg);
-  if (err != ESP_OK) Serial.printf("[cam] init failed: 0x%x\n", err);
-  else               Serial.println("[cam] ready");
+  if (err != ESP_OK) {
+    Serial.printf("[cam] init failed: 0x%x\n", err);
+    Serial.println("[cam] Common fixes: check camera cable, power supply (5V), or try lower resolution");
+  } else {
+    Serial.println("[cam] Camera initialized successfully");
+
+    // Test frame capture
+    camera_fb_t *fb = esp_camera_fb_get();
+    if (fb) {
+      Serial.printf("[cam] Test capture OK: %dx%d, %d bytes\n", fb->width, fb->height, fb->len);
+      esp_camera_fb_return(fb);
+    } else {
+      Serial.println("[cam] Warning: Test capture failed!");
+    }
+  }
 }
 
 // ---- Setup / loop ----------------------------------------------------------
