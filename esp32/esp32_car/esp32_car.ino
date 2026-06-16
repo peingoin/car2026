@@ -2,7 +2,7 @@
  *  esp32_car.ino  -  RC car wireless brain  (HTTP version, minimal page)
  *
  *  ESP32-CAM: WiFi hotspot + tiny control page + HTTP control, bridged to the
- *  Arduino over Serial2 (GPIO4, inverted to keep the flash LED dark).
+ *  Arduino over Serial2 (GPIO14, inverted).
  *
  *  Libraries: NONE beyond the ESP32 core.
  *  Board: AI-Thinker ESP32-CAM. Phone: join "RC-CAR", open http://192.168.4.1
@@ -21,12 +21,11 @@ const int   MAX_PWM       = 255;
 const unsigned long CMD_TIMEOUT_MS = 400;
 
 const int   ARDUINO_RX_PIN = -1;        // not used (telemetry off)
-const int   ARDUINO_TX_PIN = 4;         // GPIO4 -> Arduino RX (pin 11); inverted
+const int   ARDUINO_TX_PIN = 14;        // GPIO14 -> Arduino RX (pin 11); inverted
 const bool  SERIAL_INVERT  = true;      // keep the GPIO4 flash LED dark
 const long  ARDUINO_BAUD   = 38400;
 
-// Activity LED: the bright white flash LED (GPIO4) is busy as the Serial2 TX line,
-// so we blink the ESP32-CAM's small onboard RED LED (GPIO33, active LOW) instead.
+// Activity LED: blink the ESP32-CAM's small onboard RED LED (GPIO33, active LOW).
 const int   STATUS_LED_PIN = 33;
 const bool  STATUS_LED_ACTIVE_LOW = true;
 const unsigned long LED_PULSE_MS  = 60;   // how long each input lights the LED
@@ -112,7 +111,7 @@ void handleControl() {
     gLastCmdMs = millis();
     gStopped = false;
     mixAndSend(gSteer, gThrottle);
-    if (fabs(gSteer) > 0.0f || fabs(gThrottle) > 0.0f) ledPulse();  // flash on real input
+    ledPulse();  // flash on any input received
   }
   server.send(200, "text/plain", "ok");
 }
@@ -125,7 +124,18 @@ void handleStop() {
 }
 
 void handleAppleProbe() {
-  server.send(200, "text/html",
+  se-//////////////////////////////////////////////++//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////+/+//+++++++++////////////////////--//////////++-
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  rver.send(200, "text/html",
               "<HTML><HEAD><TITLE>Success</TITLE></HEAD><BODY>Success</BODY></HTML>");
 }
 
@@ -138,11 +148,18 @@ void setup() {
   pinMode(STATUS_LED_PIN, OUTPUT);
   ledWrite(false);                       // start with the activity LED off
 
+  // Disable WiFi power saving and set mode
+  WiFi.persistent(false);        // Don't save WiFi config to flash (faster, reduces wear)
   WiFi.mode(WIFI_AP);
-  bool ok = WiFi.softAP(AP_SSID, (strlen(AP_PASS) >= 8) ? AP_PASS : nullptr);
+  WiFi.setTxPower(WIFI_POWER_19_5dBm);  // Max power for better range
+
+  // Configure AP with specific channel and settings for reliability
+  // Channel 1, hidden=false, max_connections=4
+  bool ok = WiFi.softAP(AP_SSID, (strlen(AP_PASS) >= 8) ? AP_PASS : nullptr, 1, 0, 4);
+
   IPAddress ip = WiFi.softAPIP();
   Serial.printf("\n[wifi] AP \"%s\" %s\n", AP_SSID, ok ? "started" : "FAILED");
-  Serial.printf("[wifi] open  http://%s\n", ip.toString().c_str());
+  Serial.printf("[wifi] Channel 1, max power, IP: http://%s\n", ip.toString().c_str());
 
   dnsServer.start(DNS_PORT, "*", ip);
 
@@ -170,5 +187,10 @@ void loop() {
   }
 
   // Turn the activity LED back off after its pulse window.
-  if (gLedOn && (long)(millis() - gLedOffMs) >= 0) ledWrite(false);
+----  if (gLedOn && (long)(millis() - gLedOffMs) >= 0) ledWrite(false);
 }
+
+
+
+
+

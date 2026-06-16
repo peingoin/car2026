@@ -24,10 +24,10 @@ const uint8_t PIN_ESP_TX = 12;   // -> ESP32 RX via level shift! (only for telem
 
 // BTS7960 (IBT-2) — single motor.
 // RPWM/LPWM are the two direction inputs (PWM); R_EN/L_EN enable each half-bridge.
-const uint8_t RPWM = 3;          // forward PWM  — MUST be a PWM pin (3,5,6,9,10,11)
-const uint8_t LPWM = 9;          // reverse PWM  — MUST be a PWM pin
-const uint8_t R_EN = 5;          // enable forward half-bridge (driven HIGH)
-const uint8_t L_EN = 6;          // enable reverse half-bridge (driven HIGH)
+const uint8_t RPWM = 5;          // forward PWM  — MUST be a PWM pin (3,5,6,9,10,11)
+const uint8_t LPWM = 6;          // reverse PWM  — MUST be a PWM pin
+const uint8_t R_EN = 7;          // enable forward half-bridge (driven HIGH, always on)
+const uint8_t L_EN = 8;          // enable reverse half-bridge (driven HIGH, always on)
 
 // ---- Behavior --------------------------------------------------------------
 const unsigned long FAILSAFE_MS = 400;   // stop if no command for this long
