@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git pull origin master)",
+      "Bash(git add arduino/arduino_motors/arduino_motors.ino esp32/esp32_car/esp32_car.ino arduino/motor_test/motor_test.ino)",
+      "Bash(git commit -m \"$(cat <<''EOF''\nUpdate pin configurations and improve WiFi reliability\n\n- Changed Arduino PWM pins: RPWM to pin 5, LPWM to pin 6\n- Moved enable pins to 7 and 8 (always on)\n- Changed ESP32 TX pin from GPIO4 to GPIO14\n- Added WiFi reliability improvements: max power, persistent=false, explicit channel\n- LED now flashes on all input received\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

@@ -147,18 +147,7 @@ void handleStop() {
 }
 
 void handleAppleProbe() {
-  se-//////////////////////////////////////////////++//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////+/+//+++++++++////////////////////--//////////++-
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  rver.send(200, "text/html",
+  server.send(200, "text/html",
               "<HTML><HEAD><TITLE>Success</TITLE></HEAD><BODY>Success</BODY></HTML>");
 }
 
@@ -166,7 +155,10 @@ void handleCam() {
   camera_fb_t *fb = esp_camera_fb_get();
   if (!fb) { server.send(503, "text/plain", "camera error"); return; }
   server.sendHeader("Cache-Control", "no-store");
-  server.send(200, "image/jpeg", (const char*)fb->buf, fb->len);
+  server.sendHeader("Content-Type", "image/jpeg");
+  server.sendHeader("Content-Length", String(fb->len));
+  WiFiClient client = server.client();
+  client.write(fb->buf, fb->len);
   esp_camera_fb_return(fb);
 }
 
@@ -247,7 +239,7 @@ void loop() {
   }
 
   // Turn the activity LED back off after its pulse window.
-----  if (gLedOn && (long)(millis() - gLedOffMs) >= 0) ledWrite(false);
+  if (gLedOn && (long)(millis() - gLedOffMs) >= 0) ledWrite(false);
 }
 
 

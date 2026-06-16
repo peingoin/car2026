@@ -20,7 +20,7 @@
 
 // ---- Pin map ---------------------------------------------------------------
 // Serial link to ESP32 (SoftwareSerial)
-const uint8_t PIN_ESP_RX = 11;   // <- ESP32 TX (GPIO4)
+const uint8_t PIN_ESP_RX = 11;   // <- ESP32 TX (GPIO14)
 const uint8_t PIN_ESP_TX = 12;   // -> ESP32 RX via level shift! (only for telemetry)
 
 // BTS7960 (IBT-2) — single motor.
